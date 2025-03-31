@@ -1,0 +1,4 @@
+{
+  "rust-analyzer.check.allTargets": false,
+  "licenser.license": "UNL"
+}
