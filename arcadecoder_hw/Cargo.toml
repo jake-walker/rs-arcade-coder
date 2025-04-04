@@ -4,7 +4,6 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-arrform = "0.1.1"
 embassy-time = "0.4.0"
 embedded-hal = "1.0.0"
 esp-hal = { version = "1.0.0-beta.0", features = ["esp32"] }

@@ -1,7 +1,10 @@
 #![no_std]
 #![no_main]
 
-use arcadecoder_hw::ArcadeCoder;
+use arcadecoder_hw::{
+    font::{FONT_5X5, FONT_5X5_SIZE},
+    ArcadeCoder, WHITE,
+};
 use embassy_executor::Spawner;
 use embassy_time::{Duration, Timer};
 use esp_backtrace as _;
@@ -18,8 +21,17 @@ async fn display(mut ac: ArcadeCoder<'static>) {
     Timer::after(Duration::from_secs(1)).await;
 
     loop {
-        ac.draw().await;
-        Timer::after(Duration::from_millis(1)).await;
+        for n in 0_u32..99_u32 {
+            ac.clear_display();
+            let digit1 = n % 10;
+            let digit2 = (n / 10) % 10;
+            ac.draw_digit(digit1, FONT_5X5, FONT_5X5_SIZE, 6, 0, WHITE);
+            ac.draw_digit(digit2, FONT_5X5, FONT_5X5_SIZE, 0, 0, WHITE);
+            for _ in 0..50 {
+                ac.draw().await;
+                Timer::after_millis(1).await;
+            }
+        }
     }
 }
 

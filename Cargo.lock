@@ -12,18 +12,11 @@ checksum = "dcfed56ad506cb2c684a14971b8861fdc3baaaae314b9e5f9bb532cbe3ba7a4f"
 name = "arcadecoder_hw"
 version = "0.1.0"
 dependencies = [
- "arrform",
  "embassy-time",
  "embedded-hal 1.0.0",
  "esp-hal",
  "esp-println",
 ]
-
-[[package]]
-name = "arrform"
-version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e7cf566ecc5c9d82b973e81d30babf6583c9b497f86295c952d538c3254ef4e6"
 
 [[package]]
 name = "autocfg"

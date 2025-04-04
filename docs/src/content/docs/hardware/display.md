@@ -40,21 +40,15 @@ The rows are selected by setting different combinations on the multiplexer.
 
 ## Driving
 
-:::note[Your milage may vary]
-Others have used different methods for driving the display. I tried variations of this method, for example, latching after each row. Some methods can also introduce a coil whine noise. I found this method to have the least amount of flickering and the best speed.
-:::
-
 :::note
 I used an SPI speed of 200kHz. Much faster introduces flickering, and much slower doesn't work at all.
 :::
 
-1. When beginning to draw, set **output enable low** and **latch low**.
-1. Cycle through each of the 6 sets of rows by setting pins **A0, A1 & A2**.
-1. Write data out using the SPI bus for accurate timing. Otherwise, send each bit (MSB), setting the **clock** high, then low after each bit with a short delay.
-1. Repeat steps 2-3 for each of the rows.
-1. Set all the multiplexer pins to low.
-1. Set the **latch** high, then low after a short delay (e.g. 50µs).
-1. Set **output enable high**.
+1. For each row, set the multiplexer (A0, A1 & A2) according to the table above to select the rows to be drawn to. _Consider adding a short (e.g. 50µs) delay afterwards for the output to stabilize._
+1. Set **output enable low** and **latch low**.
+1. Write data out using the SPI bus for accurate timing. Otherwise, send each bit (MSB), setting the **clock high**, then low after each bit with a short delay.
+1. Set **latch high**, wait for a short time (e.g. 50µs), then set **latch low** and **output enable high**.
+1. Repeat for other rows.
 
 Ideally, you want to run this loop as fast as possible (≥ 30 times per second) for a proper persistence of vision effect.
 
