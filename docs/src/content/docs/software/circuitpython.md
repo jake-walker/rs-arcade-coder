@@ -9,7 +9,7 @@ The ESP32 does not have support for the CIRCUITPY drive, so you will need to pro
 :::
 
 1. Download the BIN file for the [ESP32-DevKitC-V4-WROOM-32E](https://circuitpython.org/board/espressif_esp32_devkitc_v4_wroom_32e/) CircuitPython board.
-1. Connect a UART to USB adapter to your board ([see here](../connection)). You will need to put the board into programming mode before continuing by shorting GPIO0 to ground when turning on the board for a short while.
+1. Connect a UART to USB adapter to your board ([see here](./connection.md)). You will need to put the board into programming mode before continuing by shorting GPIO0 to ground when turning on the board for a short while.
 1. Find your UART adapter's serial port this will be `COM...` on Windows and `/dev/tty.usb...` on Linux/macOS.
 1. Install [esptool](https://github.com/espressif/esptool)
 1. Erase the board's flash using the following command:
