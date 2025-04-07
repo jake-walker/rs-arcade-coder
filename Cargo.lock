@@ -812,12 +812,15 @@ dependencies = [
  "arcadecoder_hw",
  "critical-section",
  "embassy-executor",
+ "embassy-futures",
+ "embassy-sync",
  "embassy-time",
  "esp-backtrace",
  "esp-hal",
  "esp-hal-embassy",
  "esp-println",
  "log",
+ "static_cell",
 ]
 
 [[package]]

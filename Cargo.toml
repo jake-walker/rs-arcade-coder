@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["demo", "arcadecoder_hw"]
+members = ["scoreboard", "arcadecoder_hw"]
 
 [profile.dev]
 # Rust debug is too slow.

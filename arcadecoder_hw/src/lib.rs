@@ -297,7 +297,8 @@ impl<'a> ArcadeCoder<'a> {
         self.set_channel(None).await;
     }
 
-    fn read_row_values(&mut self) -> [bool; 6] {
+    /// Get the current roes that have buttons pressed
+    pub fn read_row_values(&self) -> [bool; 6] {
         [
             self.inputs_1_7.is_high(),
             self.inputs_2_8.is_high(),

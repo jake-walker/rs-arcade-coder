@@ -21,3 +21,6 @@ esp-backtrace = { version = "0.15.1", features = [
     "panic-handler",
     "println",
 ] }
+embassy-futures = "0.1.1"
+embassy-sync = "0.6.2"
+static_cell = "2.1.0"
