@@ -45,9 +45,9 @@ I used an SPI speed of 200kHz. Much faster introduces flickering, and much slowe
 :::
 
 1. For each row, set the multiplexer (A0, A1 & A2) according to the table above to select the rows to be drawn to. _Consider adding a short (e.g. 50µs) delay afterwards for the output to stabilize._
-1. Set **output enable low** and **latch low**.
+1. Set **output enable low**, which is left low for the entire process, and set **latch low**.
 1. Write data out using the SPI bus for accurate timing. Otherwise, send each bit (MSB), setting the **clock high**, then low after each bit with a short delay.
-1. Set **latch high**, wait for a short time (e.g. 50µs), then set **latch low** and **output enable high**.
+1. Set **latch high**, wait for a short time (e.g. 50µs), then set **latch low**.
 1. Repeat for other rows.
 
 Ideally, you want to run this loop as fast as possible (≥ 30 times per second) for a proper persistence of vision effect.

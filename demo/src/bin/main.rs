@@ -9,9 +9,9 @@ use embassy_executor::Spawner;
 use embassy_time::{Duration, Timer};
 use esp_backtrace as _;
 use esp_hal::{
-    gpio::{Level, Output, OutputConfig},
+    gpio::{Level, Output},
     spi::master::Spi,
-    time::Rate,
+    time::RateExtU32,
     timer::timg::TimerGroup,
 };
 use esp_println::println;
@@ -25,11 +25,14 @@ async fn display(mut ac: ArcadeCoder<'static>) {
             ac.clear_display();
             let digit1 = n % 10;
             let digit2 = (n / 10) % 10;
-            ac.draw_digit(digit1, FONT_5X5, FONT_5X5_SIZE, 6, 0, WHITE);
-            ac.draw_digit(digit2, FONT_5X5, FONT_5X5_SIZE, 0, 0, WHITE);
+            ac.draw_digit(digit1, FONT_5X5, FONT_5X5_SIZE, (6, 0), WHITE);
+            ac.draw_digit(digit2, FONT_5X5, FONT_5X5_SIZE, (0, 0), WHITE);
             for _ in 0..50 {
                 ac.draw().await;
                 Timer::after_millis(1).await;
+            }
+            if let Some(coords) = ac.read_buttons().await {
+                println!("Button pressed at {:?}", coords);
             }
         }
     }
@@ -47,7 +50,7 @@ async fn main(spawner: Spawner) {
         Spi::new(
             p.SPI2,
             esp_hal::spi::master::Config::default()
-                .with_frequency(Rate::from_khz(200))
+                .with_frequency(200_u32.kHz())
                 .with_mode(esp_hal::spi::Mode::_0)
                 .with_write_bit_order(esp_hal::spi::BitOrder::MsbFirst),
         )
@@ -59,9 +62,15 @@ async fn main(spawner: Spawner) {
         p.GPIO21,
         p.GPIO4,
         p.GPIO16,
+        p.GPIO39,
+        p.GPIO36,
+        p.GPIO35,
+        p.GPIO34,
+        p.GPIO33,
+        p.GPIO32,
     );
 
-    let mut led = Output::new(p.GPIO22, Level::Low, OutputConfig::default());
+    let mut led = Output::new(p.GPIO22, Level::Low);
     led.set_high();
 
     spawner.spawn(display(ac)).expect("could not spawn task");
