@@ -1,3 +1,7 @@
+//! Simple Rust library for working with the [Tech Will Save Us](https://en.wikipedia.org/wiki/Technology_Will_Save_Us) Arcade Coder
+//!
+//! Currently the display and single button presses work.
+
 #![no_std]
 
 use embassy_time::{Duration, Timer};
@@ -7,11 +11,14 @@ use esp_hal::{
     spi::master::Spi,
     Blocking,
 };
+use font::Font;
 
 pub mod font;
 
-type Color = (bool, bool, bool);
-type Coordinates = (usize, usize);
+/// 3-bit color
+pub type Color = (bool, bool, bool);
+/// Display coordinates
+pub type Coordinates = (usize, usize);
 
 pub const WHITE: Color = (true, true, true);
 pub const YELLOW: Color = (true, true, false);
@@ -42,6 +49,40 @@ pub struct ArcadeCoder<'a> {
 }
 
 impl<'a> ArcadeCoder<'a> {
+    /// Create a new instance of the Arcade Coder.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// let p = esp_hal::init(esp_hal::Config::default());
+    ///
+    /// let timg0 = TimerGroup::new(p.TIMG0);
+    /// esp_hal_embassy::init(timg0.timer0);
+    ///
+    /// let ac = ArcadeCoder::new(
+    ///     Spi::new(
+    ///         p.SPI2,
+    ///         esp_hal::spi::master::Config::default()
+    ///             .with_frequency(200_u32.kHz())
+    ///             .with_mode(esp_hal::spi::Mode::_0)
+    ///             .with_write_bit_order(esp_hal::spi::BitOrder::MsbFirst),
+    ///     )
+    ///     .expect("could not create spi")
+    ///     .with_mosi(p.GPIO5)
+    ///     .with_sck(p.GPIO17),
+    ///     p.GPIO19,
+    ///     p.GPIO18,
+    ///     p.GPIO21,
+    ///     p.GPIO4,
+    ///     p.GPIO16,
+    ///     p.GPIO39,
+    ///     p.GPIO36,
+    ///     p.GPIO35,
+    ///     p.GPIO34,
+    ///     p.GPIO33,
+    ///     p.GPIO32,
+    /// );
+    /// ```
     pub fn new(
         display_spi: Spi<'a, Blocking>,
         display_a0: impl Peripheral<P = impl OutputPin> + 'a,
@@ -78,7 +119,7 @@ impl<'a> ArcadeCoder<'a> {
         }
     }
 
-    async fn set_channel(&mut self, channel: Option<usize>) -> () {
+    async fn set_channel(&mut self, channel: Option<usize>) {
         let (a0_level, a1_level, a2_level) = match channel {
             Some(0) => (Level::Low, Level::High, Level::Low),
             Some(1) => (Level::High, Level::High, Level::Low),
@@ -97,6 +138,9 @@ impl<'a> ArcadeCoder<'a> {
         Timer::after(self.channel_select_delay).await;
     }
 
+    /// Clear the display buffer to make the screen blank.
+    ///
+    /// The `draw` method needs to be called after this to update the display.
     pub fn clear_display(&mut self) {
         // clear the display by setting all bits on
         self.display_buffer = [[255; 9]; 6];
@@ -111,7 +155,10 @@ impl<'a> ArcadeCoder<'a> {
         }
     }
 
-    pub fn set_pixel(&mut self, pos: Coordinates, color: Color) -> () {
+    /// Set a pixel to a color
+    ///
+    /// _Indexing starts from 0, so (0, 0) is the top-left and (11, 11) is the bottom-right._
+    pub fn set_pixel(&mut self, pos: Coordinates, color: Color) {
         // if the coordinates are out of bounds, do nothing
         if pos.0 > 11 || pos.1 > 11 {
             return;
@@ -138,7 +185,7 @@ impl<'a> ArcadeCoder<'a> {
     fn draw_font_char(
         &mut self,
         n: usize,
-        font: &[&[bool]],
+        font: Font,
         font_size: (usize, usize),
         start_pos: Coordinates,
         color: Color,
@@ -157,6 +204,17 @@ impl<'a> ArcadeCoder<'a> {
         }
     }
 
+    /// Draw a digit from a font
+    ///
+    /// ## Example
+    /// ```
+    /// use arcadecoder_hw::{
+    ///     font::{FONT_5X5, FONT_5X5_SIZE},
+    ///     WHITE,
+    /// };
+    ///
+    /// ac.draw_digit(0, FONT_5X5, FONT_5X5_SIZE, (6, 0), WHITE);
+    /// ```
     pub fn draw_digit(
         &mut self,
         n: u32,
@@ -174,6 +232,17 @@ impl<'a> ArcadeCoder<'a> {
         );
     }
 
+    /// Draw a character from a font
+    ///
+    /// ## Example
+    /// ```
+    /// use arcadecoder_hw::{
+    ///     font::{FONT_5X5, FONT_5X5_SIZE},
+    ///     WHITE,
+    /// };
+    ///
+    /// ac.draw_char('0', FONT_5X5, FONT_5X5_SIZE, (6, 0), WHITE);
+    /// ```
     pub fn draw_char(
         &mut self,
         character: char,
@@ -195,7 +264,7 @@ impl<'a> ArcadeCoder<'a> {
         self.draw_font_char(char_index, font, font_size, start_pos, color);
     }
 
-    async fn send_display_data(&mut self, words: &[u8]) -> () {
+    async fn send_display_data(&mut self, words: &[u8]) {
         self.display_oe.set_low();
         self.display_latch.set_low();
 
@@ -208,7 +277,10 @@ impl<'a> ArcadeCoder<'a> {
         self.display_latch.set_low();
     }
 
-    pub async fn draw(&mut self) -> () {
+    /// Update the display with the current buffer
+    ///
+    /// _This needs to be called regularly as the image disappears after a short time._
+    pub async fn draw(&mut self) {
         // loop over each set of rows
         for i in 0_usize..6_usize {
             // create a copy of the display buffer
@@ -236,6 +308,9 @@ impl<'a> ArcadeCoder<'a> {
         ]
     }
 
+    /// Get the coordinates of the currently pressed button (if any)
+    ///
+    /// Returns `None` if no button is pressed. _Indexing starts from 0, so (0, 0) is the top-left and (11, 11) is the bottom-right._
     pub async fn read_buttons(&mut self) -> Option<Coordinates> {
         self.display_latch.set_low();
         self.display_oe.set_low();
@@ -250,7 +325,7 @@ impl<'a> ArcadeCoder<'a> {
             for y in [i, i + 6] {
                 for x in 0..12 {
                     let (byte_idx, bit_idx) = self.get_display_indexes((x, y));
-                    buf[byte_idx + 1] = buf[byte_idx + 1] & !(1 << bit_idx); // set the red bit to 0
+                    buf[byte_idx + 1] &= !(1 << bit_idx); // set the red bit to 0
 
                     self.set_channel(None).await;
                     self.send_display_data(&buf).await;
@@ -263,7 +338,7 @@ impl<'a> ArcadeCoder<'a> {
                         return Some((x, y));
                     }
 
-                    buf[byte_idx + 1] = buf[byte_idx + 1] | (1 << bit_idx); // set the red bit to 1
+                    buf[byte_idx + 1] |= 1 << bit_idx; // set the red bit to 1
                 }
             }
 

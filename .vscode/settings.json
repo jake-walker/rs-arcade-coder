@@ -1,4 +1,6 @@
 {
   "rust-analyzer.check.allTargets": false,
-  "licenser.license": "UNL"
+  "licenser.license": "UNL",
+  "rust-analyzer.check.command": "clippy",
+  "rust-analyzer.checkOnSave": true
 }

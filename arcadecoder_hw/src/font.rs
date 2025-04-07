@@ -1,6 +1,13 @@
+//! Simple fonts for displaying numbers
+//!
+//! Fonts are made up of an array of booleans representing on and off pixels.
+
+pub type Font<'a> = &'a [&'a [bool]];
+
 pub const FONT_5X5_SIZE: (usize, usize) = (5, 5);
 
-pub static FONT_5X5: &[&[bool]] = &[
+/// A basic 5x5 pixel font
+pub static FONT_5X5: Font = &[
     // 0
     &[
         false, true, true, true, false, true, false, false, false, true, true, false, false, false,
