@@ -1,141 +1,136 @@
 #![no_std]
 #![no_main]
 
-use core::{
-    cell::RefCell,
-    sync::atomic::{AtomicU32, Ordering},
-};
-
 use arcadecoder_hw::{
+    display::{ArcadeCoderDisplay, Color, GREEN, MAGENTA, RED, WHITE},
     font::{FONT_5X5, FONT_5X5_SIZE},
-    ArcadeCoder, BLUE, GREEN,
+    ArcadeCoder,
 };
 use embassy_executor::Spawner;
-use embassy_futures::{
-    select::{select, Either},
-    yield_now,
-};
-use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, mutex::Mutex, signal::Signal};
-use embassy_time::{Duration, Timer};
+use embassy_futures::select::{select, Either};
+use embassy_time::Timer;
 use esp_backtrace as _;
 use esp_hal::{
     gpio::{Level, Output},
-    spi::master::Spi,
-    time::RateExtU32,
     timer::timg::TimerGroup,
 };
 use esp_println::println;
 
-static SCORE_A: AtomicU32 = AtomicU32::new(0);
-static SCORE_B: AtomicU32 = AtomicU32::new(0);
+const A_COLOR: Color = GREEN;
+const B_COLOR: Color = MAGENTA;
 
-static BUTTON_PRESSED: Signal<CriticalSectionRawMutex, ()> = Signal::new();
+#[derive(Debug)]
+struct State {
+    pub score_a: u8,
+    pub score_b: u8,
+    pub win_threshold: u8,
+    pub win_diff: u8,
 
-static AC_MUTEX: Mutex<CriticalSectionRawMutex, RefCell<Option<ArcadeCoder>>> =
-    Mutex::new(RefCell::new(None));
-
-fn update_display(ac: &mut ArcadeCoder<'_>, score_a: u32, score_b: u32) {
-    ac.clear_display();
-
-    ac.draw_digit(score_a % 10, FONT_5X5, FONT_5X5_SIZE, (0, 6), GREEN);
-    ac.draw_digit((score_a / 10) % 10, FONT_5X5, FONT_5X5_SIZE, (0, 0), GREEN);
-    ac.draw_digit(score_b % 10, FONT_5X5, FONT_5X5_SIZE, (7, 6), BLUE);
-    ac.draw_digit((score_b / 10) % 10, FONT_5X5, FONT_5X5_SIZE, (7, 0), BLUE);
+    a_winner: bool,
+    b_winner: bool,
 }
 
-#[embassy_executor::task]
-async fn display_task() {
-    Timer::after(Duration::from_secs(1)).await;
-
-    loop {
-        // wait for the button to be pressed or 100 microseconds
-        match select(BUTTON_PRESSED.wait(), Timer::after_micros(100)).await {
-            // if the button was pressed, update the display and draw
-            Either::First(_) => {
-                let score_a_value = SCORE_A.load(Ordering::Relaxed);
-                let score_b_value = SCORE_B.load(Ordering::Relaxed);
-
-                let ac_guard = AC_MUTEX.lock().await;
-                let mut ac_ref = ac_guard.borrow_mut();
-
-                if let Some(ac) = ac_ref.as_mut() {
-                    update_display(ac, score_a_value, score_b_value);
-                    ac.draw().await;
-                }
-
-                yield_now().await;
-            }
-            // ...otherwise just draw
-            Either::Second(_) => {
-                let ac_guard = AC_MUTEX.lock().await;
-                let mut ac_ref = ac_guard.borrow_mut();
-
-                if let Some(ac) = ac_ref.as_mut() {
-                    ac.draw().await;
-                }
-
-                yield_now().await;
-            }
+impl State {
+    pub fn new() -> Self {
+        Self {
+            score_a: 0,
+            score_b: 0,
+            win_threshold: 11,
+            win_diff: 2,
+            a_winner: false,
+            b_winner: false,
         }
     }
-}
 
-#[embassy_executor::task]
-async fn button_task() {
-    loop {
-        {
-            let ac_guard = AC_MUTEX.lock().await;
+    fn check_win(&mut self) {
+        let diff = self.score_a.abs_diff(self.score_b);
 
-            // if any rows are pressed
-            if ac_guard
-                .borrow()
-                .as_ref()
-                .unwrap()
-                .read_row_values()
-                .iter()
-                .any(|v| *v)
-            {
-                // borrow the hardware
-                let mut ac_ref = ac_guard.borrow_mut();
+        self.a_winner = self.score_a > self.score_b
+            && self.score_a >= self.win_threshold
+            && diff >= self.win_diff;
+        self.b_winner = self.score_b > self.score_a
+            && self.score_b >= self.win_threshold
+            && diff >= self.win_diff;
+    }
 
-                if let Some(ac) = ac_ref.as_mut() {
-                    // get the currently pressed coordinates
-                    if let Some(coords) = ac.read_buttons().await {
-                        if coords.1 == 11 {
-                            // if the bottom row, reset the scores
-                            SCORE_A.store(0, Ordering::Relaxed);
-                            SCORE_B.store(0, Ordering::Relaxed);
-                        } else if coords.0 < 6 && coords.1 < 6 {
-                            // if top-left, add 1 to score a
-                            SCORE_A.fetch_add(1, Ordering::Relaxed);
-                        } else if coords.0 < 6 {
-                            // if bottom-left, subtract 1 from score a
-                            SCORE_A.fetch_sub(1, Ordering::Relaxed);
-                        } else if coords.1 < 6 {
-                            // if top-right, add 1 to score b
-                            SCORE_B.fetch_add(1, Ordering::Relaxed);
-                        } else {
-                            // if bottom-right, subtract 1 from score b
-                            SCORE_B.fetch_sub(1, Ordering::Relaxed);
-                        }
+    pub fn reset(&mut self) {
+        self.score_a = 0;
+        self.score_b = 0;
+        self.check_win();
+    }
 
-                        // signal a button was pressed
-                        BUTTON_PRESSED.signal(());
+    pub fn inc_score_a(&mut self) {
+        self.score_a = self.score_a.checked_add(1).unwrap_or(self.score_a);
+        self.check_win();
+    }
 
-                        // debounce
-                        Timer::after_millis(200).await;
-                    }
-                }
-            }
+    pub fn inc_score_b(&mut self) {
+        self.score_b = self.score_b.checked_add(1).unwrap_or(self.score_b);
+        self.check_win();
+    }
+
+    pub fn dec_score_a(&mut self) {
+        self.score_a = self.score_a.checked_sub(1).unwrap_or(self.score_a);
+        self.check_win();
+    }
+
+    pub fn dec_score_b(&mut self) {
+        self.score_b = self.score_b.checked_sub(1).unwrap_or(self.score_b);
+        self.check_win();
+    }
+
+    pub fn update_display(&self, display: &mut ArcadeCoderDisplay<'_>) {
+        display.clear();
+
+        let mut a_text_color = A_COLOR;
+        let mut b_text_color = B_COLOR;
+
+        if self.a_winner {
+            display.draw_rect((0, 0), (11, 11), A_COLOR);
+            a_text_color = WHITE;
+        } else if self.b_winner {
+            display.draw_rect((0, 0), (11, 11), B_COLOR);
+            b_text_color = WHITE;
         }
 
-        // time for the display to do things
-        Timer::after_millis(10).await;
+        display.draw_digit(
+            (self.score_a % 10).into(),
+            FONT_5X5,
+            FONT_5X5_SIZE,
+            (0, 6),
+            a_text_color,
+        );
+        display.draw_digit(
+            ((self.score_a / 10) % 10).into(),
+            FONT_5X5,
+            FONT_5X5_SIZE,
+            (0, 0),
+            a_text_color,
+        );
+        display.draw_digit(
+            (self.score_b % 10).into(),
+            FONT_5X5,
+            FONT_5X5_SIZE,
+            (7, 6),
+            b_text_color,
+        );
+        display.draw_digit(
+            ((self.score_b / 10) % 10).into(),
+            FONT_5X5,
+            FONT_5X5_SIZE,
+            (7, 0),
+            b_text_color,
+        );
+
+        if self.win_threshold == 21 {
+            display.set_pixel((5, 11), RED);
+            display.set_pixel((6, 11), RED);
+        }
     }
 }
 
 #[esp_hal_embassy::main]
-async fn main(spawner: Spawner) {
+async fn main(_spawner: Spawner) {
     println!("Init!");
     let p = esp_hal::init(esp_hal::Config::default());
 
@@ -143,40 +138,60 @@ async fn main(spawner: Spawner) {
     esp_hal_embassy::init(timg0.timer0);
 
     let mut ac = ArcadeCoder::new(
-        Spi::new(
-            p.SPI2,
-            esp_hal::spi::master::Config::default()
-                .with_frequency(200_u32.kHz())
-                .with_mode(esp_hal::spi::Mode::_0)
-                .with_write_bit_order(esp_hal::spi::BitOrder::MsbFirst),
-        )
-        .expect("could not create spi")
-        .with_mosi(p.GPIO5)
-        .with_sck(p.GPIO17),
-        p.GPIO19,
-        p.GPIO18,
-        p.GPIO21,
-        p.GPIO4,
-        p.GPIO16,
-        p.GPIO39,
-        p.GPIO36,
-        p.GPIO35,
-        p.GPIO34,
-        p.GPIO33,
-        p.GPIO32,
+        p.SPI2, p.GPIO19, p.GPIO18, p.GPIO21, p.GPIO4, p.GPIO16, p.GPIO5, p.GPIO17, p.GPIO39,
+        p.GPIO36, p.GPIO35, p.GPIO34, p.GPIO33, p.GPIO32,
     );
 
-    update_display(&mut ac, 0, 0);
+    let mut state = State::new();
 
-    *AC_MUTEX.lock().await.borrow_mut() = Some(ac);
+    state.update_display(&mut ac.display);
 
     let mut led = Output::new(p.GPIO22, Level::Low);
     led.set_high();
 
-    spawner
-        .spawn(display_task())
-        .expect("could not spawn display task");
-    spawner
-        .spawn(button_task())
-        .expect("could not spawn button task");
+    loop {
+        match select(ac.inputs.wait_for_row_press(), Timer::after_millis(1)).await {
+            // if the button was pressed, update the display and draw
+            Either::First(_) => {
+                Timer::after_millis(20).await;
+                if ac.inputs.row_pressed().is_none() {
+                    continue;
+                }
+
+                if let Some(coords) = ac.inputs.read_buttons(&mut ac.display).await {
+                    if coords.1 == 11 && (coords.0 == 5 || coords.0 == 6) {
+                        if state.win_threshold == 11 {
+                            state.win_threshold = 21
+                        } else {
+                            state.win_threshold = 11
+                        }
+                        state.check_win();
+                    } else if coords.1 == 11 {
+                        // if the bottom row, reset the scores
+                        state.reset();
+                    } else if coords.0 < 6 && coords.1 < 6 {
+                        // if top-left, add 1 to score a
+                        state.inc_score_a();
+                    } else if coords.0 < 6 {
+                        // if bottom-left, subtract 1 from score a
+                        state.dec_score_a();
+                    } else if coords.1 < 6 {
+                        // if top-right, add 1 to score b
+                        state.inc_score_b();
+                    } else {
+                        // if bottom-right, subtract 1 from score b
+                        state.dec_score_b();
+                    }
+                }
+
+                ac.inputs.wait_for_row_release().await;
+                state.update_display(&mut ac.display);
+                ac.display.draw().await;
+            }
+            // ...otherwise just draw
+            Either::Second(_) => {
+                ac.display.draw().await;
+            }
+        }
+    }
 }

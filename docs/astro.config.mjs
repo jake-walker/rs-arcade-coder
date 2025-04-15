@@ -37,6 +37,10 @@ export default defineConfig({
           label: "Links",
           link: "links",
         },
+        {
+          label: "API",
+          link: "api",
+        },
       ],
     }),
   ],
