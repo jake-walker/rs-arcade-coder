@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 embassy-futures = "0.1.1"
+embassy-sync = "0.7.2"
 embassy-time = "0.4.0"
 embedded-hal = "1.0.0"
 esp-hal = { version = "1.0.0-rc.0", features = ["esp32", "unstable"] }

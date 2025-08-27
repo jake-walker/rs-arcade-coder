@@ -14,6 +14,7 @@ version = "0.1.0"
 dependencies = [
  "embassy-executor",
  "embassy-futures",
+ "embassy-sync 0.7.2",
  "embassy-time",
  "embedded-hal 1.0.0",
  "esp-backtrace",
@@ -251,9 +252,9 @@ dependencies = [
 
 [[package]]
 name = "embassy-sync"
-version = "0.7.1"
+version = "0.7.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "03c372c90d3525a648684fa1c131decaf7d9ff181030db09c876fad6043443b9"
+checksum = "73974a3edbd0bd286759b3d483540f0ebef705919a5f56f4fc7709066f71689b"
 dependencies = [
  "cfg-if",
  "critical-section",
@@ -979,7 +980,7 @@ dependencies = [
  "critical-section",
  "embassy-executor",
  "embassy-futures",
- "embassy-sync 0.7.1",
+ "embassy-sync 0.7.2",
  "embassy-time",
  "esp-backtrace",
  "esp-bootloader-esp-idf",

@@ -7,7 +7,6 @@
 #![no_std]
 #![doc = include_str!("../../docs/setup.md")]
 
-use embassy_futures::{join::join_array, select::select_array};
 use embassy_time::{Duration, Timer};
 use esp_hal::gpio::{Input, InputConfig, InputPin, Pull};
 use esp_hal::{gpio::OutputPin, peripherals::SPI2};
@@ -38,6 +37,12 @@ pub const GREEN: Color = (false, true, false);
 pub const BLUE: Color = (false, false, true);
 pub const BLACK: Color = (false, false, false);
 
+#[derive(Clone, Copy, Debug)]
+pub enum ButtonEvent {
+    Pressed(u8, u8),
+    Released(u8, u8),
+}
+
 pub struct ArcadeCoder<'a> {
     spi: Spi<'a, Blocking>,
     pin_a0: Output<'a>,
@@ -66,6 +71,12 @@ pub struct ArcadeCoder<'a> {
     pub debounce_delay: Duration,
 
     pub channel_on_time: Duration,
+
+    pub debounce_reads: u8,
+
+    prev_read: [[bool; 12]; 12],
+    stable_count: [[u8; 12]; 12],
+    stable_state: [[bool; 12]; 12],
 }
 
 impl<'a> ArcadeCoder<'a> {
@@ -131,6 +142,10 @@ impl<'a> ArcadeCoder<'a> {
             rows_6_12: Input::new(inputs_6_12, input_cfg),
             debounce_delay: Duration::from_millis(20),
             button_presses: [[false; 12]; 12],
+            debounce_reads: 3,
+            prev_read: [[false; 12]; 12],
+            stable_count: [[0u8; 12]; 12],
+            stable_state: [[false; 12]; 12],
         }
     }
 
@@ -304,6 +319,47 @@ impl<'a> ArcadeCoder<'a> {
 
     // MARK: - Inputs
 
+    pub fn handle_input_events<F>(&mut self, mut handler: F)
+    where
+        F: FnMut(ButtonEvent),
+    {
+        for y in 0..12_usize {
+            for x in 0..12_usize {
+                let cur = self.button_presses[y][x];
+
+                if cur == self.prev_read[y][x] {
+                    self.stable_count[y][x] = self.stable_count[y][x].saturating_add(1);
+                } else {
+                    self.stable_count[y][x] = 0;
+                    self.prev_read[y][x] = cur;
+                }
+
+                if self.stable_count[y][x] >= self.debounce_reads && cur != self.stable_state[y][x]
+                {
+                    self.stable_state[y][x] = cur;
+                    if cur {
+                        handler(ButtonEvent::Pressed(x as u8, y as u8));
+                    } else {
+                        handler(ButtonEvent::Released(x as u8, y as u8));
+                    }
+                }
+            }
+        }
+    }
+
+    pub fn handle_input_events_to_channel<const N: usize>(
+        &mut self,
+        ch: &embassy_sync::channel::Channel<
+            embassy_sync::blocking_mutex::raw::NoopRawMutex,
+            ButtonEvent,
+            N,
+        >,
+    ) {
+        self.handle_input_events(|e| {
+            let _ = ch.try_send(e);
+        });
+    }
+
     /// Continuously scan the display and sample buttons while drawing.
     ///
     /// This combines the previous drawing and button sampling so the display is not
@@ -376,7 +432,6 @@ impl<'a> ArcadeCoder<'a> {
                     if pressed {
                         // mark the button as pressed
                         self.button_presses[physical_row][x] = true;
-                        println!("New press: y={},x={}", physical_row, x);
                     }
 
                     // unset the red bit for the next pass
