@@ -130,6 +130,39 @@ impl State {
     }
 }
 
+#[embassy_executor::task]
+async fn state_update(state: &'static mut State) {
+    if let Some(coords) = ac.read_buttons().await {
+        if coords.1 == 11 && (coords.0 == 5 || coords.0 == 6) {
+            if state.win_threshold == 11 {
+                state.win_threshold = 21
+            } else {
+                state.win_threshold = 11
+            }
+            state.check_win();
+        } else if coords.1 == 11 {
+            // if the bottom row, reset the scores
+            state.reset();
+        } else if coords.0 < 6 && coords.1 < 6 {
+            // if top-left, add 1 to score a
+            state.inc_score_a();
+        } else if coords.0 < 6 {
+            // if bottom-left, subtract 1 from score a
+            state.dec_score_a();
+        } else if coords.1 < 6 {
+            // if top-right, add 1 to score b
+            state.inc_score_b();
+        } else {
+            // if bottom-right, subtract 1 from score b
+            state.dec_score_b();
+        }
+    }
+
+    ac.wait_for_row_release().await;
+    state.update_display(&mut ac);
+    ac.draw().await;
+}
+
 #[esp_hal_embassy::main]
 async fn main(_spawner: Spawner) {
     println!("Init!");
@@ -151,48 +184,6 @@ async fn main(_spawner: Spawner) {
     led.set_high();
 
     loop {
-        match select(ac.wait_for_row_press(), Timer::after_millis(1)).await {
-            // if the button was pressed, update the display and draw
-            Either::First(_) => {
-                Timer::after_millis(20).await;
-                if ac.row_pressed().is_none() {
-                    continue;
-                }
-
-                if let Some(coords) = ac.read_buttons().await {
-                    if coords.1 == 11 && (coords.0 == 5 || coords.0 == 6) {
-                        if state.win_threshold == 11 {
-                            state.win_threshold = 21
-                        } else {
-                            state.win_threshold = 11
-                        }
-                        state.check_win();
-                    } else if coords.1 == 11 {
-                        // if the bottom row, reset the scores
-                        state.reset();
-                    } else if coords.0 < 6 && coords.1 < 6 {
-                        // if top-left, add 1 to score a
-                        state.inc_score_a();
-                    } else if coords.0 < 6 {
-                        // if bottom-left, subtract 1 from score a
-                        state.dec_score_a();
-                    } else if coords.1 < 6 {
-                        // if top-right, add 1 to score b
-                        state.inc_score_b();
-                    } else {
-                        // if bottom-right, subtract 1 from score b
-                        state.dec_score_b();
-                    }
-                }
-
-                ac.wait_for_row_release().await;
-                state.update_display(&mut ac);
-                ac.draw().await;
-            }
-            // ...otherwise just draw
-            Either::Second(_) => {
-                ac.draw().await;
-            }
-        }
+        ac.scan().await;
     }
 }

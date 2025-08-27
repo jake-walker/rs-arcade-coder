@@ -17,6 +17,7 @@ use esp_hal::{
     time::Rate,
     Blocking,
 };
+use esp_println::println;
 
 use crate::font::Font;
 
@@ -60,10 +61,11 @@ pub struct ArcadeCoder<'a> {
     /// The current display buffer.
     pub display_buffer: [[u8; 9]; 6],
 
-    /// Whether to draw a row blank after drawing to reduce ghosting. This comes at the cost of longer draw times.
-    pub anti_ghost: bool,
+    pub button_presses: [[bool; 12]; 12],
 
     pub debounce_delay: Duration,
+
+    pub channel_on_time: Duration,
 }
 
 impl<'a> ArcadeCoder<'a> {
@@ -103,7 +105,7 @@ impl<'a> ArcadeCoder<'a> {
             spi: Spi::new(
                 spi_bus,
                 esp_hal::spi::master::Config::default()
-                    .with_frequency(Rate::from_khz(200_u32))
+                    .with_frequency(Rate::from_mhz(2_u32))
                     .with_mode(esp_hal::spi::Mode::_0)
                     .with_write_bit_order(esp_hal::spi::BitOrder::MsbFirst),
             )
@@ -115,10 +117,10 @@ impl<'a> ArcadeCoder<'a> {
             pin_a2: Output::new(pin_a2, Level::Low, output_cfg),
             pin_oe: Output::new(pin_oe, Level::High, output_cfg),
             pin_latch: Output::new(pin_latch, Level::Low, output_cfg),
-            channel_select_delay: Duration::from_micros(100),
-            latch_delay: Duration::from_micros(50),
+            channel_select_delay: Duration::from_micros(20),
+            latch_delay: Duration::from_micros(10),
             display_buffer: [[255; 9]; 6],
-            anti_ghost: true,
+            channel_on_time: Duration::from_micros(400),
 
             // Input
             rows_1_7: Input::new(inputs_1_7, input_cfg),
@@ -128,6 +130,7 @@ impl<'a> ArcadeCoder<'a> {
             rows_5_11: Input::new(inputs_5_11, input_cfg),
             rows_6_12: Input::new(inputs_6_12, input_cfg),
             debounce_delay: Duration::from_millis(20),
+            button_presses: [[false; 12]; 12],
         }
     }
 
@@ -279,7 +282,7 @@ impl<'a> ArcadeCoder<'a> {
         self.draw_font_char(char_index, font, font_size, start_pos, color);
     }
 
-    pub(crate) async fn send_display_data(&mut self, words: &[u8]) {
+    async fn send_display_data(&mut self, words: &[u8]) {
         self.pin_oe.set_low();
         self.pin_latch.set_low();
 
@@ -290,7 +293,7 @@ impl<'a> ArcadeCoder<'a> {
         self.pin_latch.set_low();
     }
 
-    pub(crate) fn get_display_indexes(&self, pos: Coordinates) -> (usize, usize) {
+    fn get_display_indexes(&self, pos: Coordinates) -> (usize, usize) {
         match (pos.0 < 4, pos.1 < 6) {
             (true, true) => (3, 4 + pos.0),
             (true, false) => (3, pos.0),
@@ -299,121 +302,90 @@ impl<'a> ArcadeCoder<'a> {
         }
     }
 
-    /// Update the display with the current buffer
-    ///
-    /// _This needs to be called regularly as the image disappears after a short time._
-    pub async fn draw(&mut self) {
-        // loop over each set of rows
-        for i in 0_usize..6_usize {
-            // create a copy of the display buffer
-            let buf = self.display_buffer[i];
-
-            self.set_channel(Some(i)).await;
-            self.send_display_data(&buf).await;
-
-            if self.anti_ghost {
-                self.send_display_data(&[255; 9]).await;
-            }
-        }
-
-        self.set_channel(None).await;
-    }
-
     // MARK: - Inputs
 
-    /// Wait until a button in any row has been pressed.
-    pub async fn wait_for_row_press(&mut self) -> usize {
-        // wait for one of the inputs to go high
-        select_array([
-            self.rows_1_7.wait_for_high(),
-            self.rows_2_8.wait_for_high(),
-            self.rows_3_9.wait_for_high(),
-            self.rows_4_10.wait_for_high(),
-            self.rows_5_11.wait_for_high(),
-            self.rows_6_12.wait_for_high(),
-        ])
-        .await
-        .1
-    }
-
-    pub async fn wait_for_row_press_debounced(&mut self) -> Option<usize> {
-        let row = self.wait_for_row_press().await;
-        Timer::after(self.debounce_delay).await;
-        if self.row_pressed().is_some() {
-            return Some(row);
-        }
-
-        None
-    }
-
-    pub fn row_pressed(&mut self) -> Option<usize> {
-        if self.rows_1_7.is_high() {
-            Some(0)
-        } else if self.rows_2_8.is_high() {
-            Some(1)
-        } else if self.rows_3_9.is_high() {
-            Some(2)
-        } else if self.rows_4_10.is_high() {
-            Some(3)
-        } else if self.rows_5_11.is_high() {
-            Some(4)
-        } else if self.rows_6_12.is_high() {
-            Some(5)
-        } else {
-            None
-        }
-    }
-
-    /// Wait until buttons in all rows have been released.
-    pub async fn wait_for_row_release(&mut self) {
-        // wait for all of the inputs to go low
-        join_array([
-            self.rows_1_7.wait_for_low(),
-            self.rows_2_8.wait_for_low(),
-            self.rows_3_9.wait_for_low(),
-            self.rows_4_10.wait_for_low(),
-            self.rows_5_11.wait_for_low(),
-            self.rows_6_12.wait_for_low(),
-        ])
-        .await;
-    }
-
-    /// Get the coordinates of the currently pressed button (if any)
+    /// Continuously scan the display and sample buttons while drawing.
     ///
-    /// Returns `None` if no button is pressed. _Indexing starts from 0, so (0, 0) is the top-left and (11, 11) is the bottom-right._
-    pub async fn read_buttons(&mut self) -> Option<Coordinates> {
-        if let Some(row) = self.row_pressed() {
-            let mut buf = [0xff; 9];
+    /// This combines the previous drawing and button sampling so the display is not
+    /// interrupted while checking inputs. The method updates `self.button_presses`.
+    ///
+    /// Implementation notes / assumptions:
+    /// - The display is driven per-channel (6 channels). Each channel maps to two
+    ///   physical matrix rows (row and row + 6). When a channel is active we test
+    ///   each column by pulling the red bit low and reading the corresponding input
+    ///   pin for that channel. If the input is low the button is considered pressed.
+    /// - `button_presses` mirrors the layout of `display_buffer` ([6][9]). Each
+    ///   boolean is set to true if any bit in the corresponding byte was observed
+    ///   pressed during this scan pass. If you need per-pixel mapping we can change
+    ///   the type to a finer-grained structure in a follow-up.
+    pub async fn scan(&mut self) {
+        // helpers to access inputs by index without repeating logic
+        let read_input = |s: &mut ArcadeCoder<'a>, idx: usize| -> bool {
+            match idx {
+                0 => s.rows_1_7.is_low(),
+                1 => s.rows_2_8.is_low(),
+                2 => s.rows_3_9.is_low(),
+                3 => s.rows_4_10.is_low(),
+                4 => s.rows_5_11.is_low(),
+                5 => s.rows_6_12.is_low(),
+                _ => false,
+            }
+        };
 
-            for y in [row, row + 6] {
-                for x in 0..12 {
-                    let (byte_idx, bit_idx) = self.get_display_indexes((x, y));
-                    buf[byte_idx + 1] &= !(1 << bit_idx); // set the red bit to 0
-
-                    self.set_channel(None).await;
-                    self.send_display_data(&buf).await;
-                    let pressed = [
-                        &self.rows_1_7,
-                        &self.rows_2_8,
-                        &self.rows_3_9,
-                        &self.rows_4_10,
-                        &self.rows_5_11,
-                        &self.rows_6_12,
-                    ][row]
-                        .is_low();
-
-                    self.send_display_data(&[0xff; 9]).await;
-
-                    if pressed {
-                        self.draw().await;
-                        return Some((x, y));
-                    }
-
-                    buf[byte_idx + 1] |= 1 << bit_idx; // set the red bit to 1
-                }
+        // clear previous button state for this pass
+        for i in 0..12_usize {
+            for j in 0..12_usize {
+                self.button_presses[i][j] = false;
             }
         }
 
-        None
+        // drive each channel and scan its 12 columns
+        for channel in 0_usize..6_usize {
+            // copy of the current rows buffer
+            let buf = self.display_buffer[channel];
+            // buffer for performing button tests
+            let mut test_buf = [0xff; 9];
+
+            // select this channel and show the normal frame first
+            self.set_channel(Some(channel)).await;
+            self.send_display_data(&buf).await;
+            // wait a short duration
+            Timer::after(self.channel_on_time).await;
+
+            // send a blank row to reduce ghosting
+            self.send_display_data(&[255; 9]).await;
+
+            // select the input channel
+            self.set_channel(None).await;
+
+            // scan columns for button presses
+            for x in 0..12_usize {
+                for physical_row in [channel, channel + 6_usize] {
+                    // get indexes corresponding to the column for the bits to be changed
+                    let (byte_idx, bit_idx) = self.get_display_indexes((x, physical_row));
+
+                    // for the input testing buffer, set the red bit to low
+                    test_buf[byte_idx + 1] &= !(1 << bit_idx);
+
+                    // send the test pattern
+                    self.send_display_data(&test_buf).await;
+
+                    // read the input line for this channel
+                    let pressed = read_input(self, channel);
+
+                    if pressed {
+                        // mark the button as pressed
+                        self.button_presses[physical_row][x] = true;
+                        println!("New press: y={},x={}", physical_row, x);
+                    }
+
+                    // unset the red bit for the next pass
+                    test_buf[byte_idx + 1] |= 1 << bit_idx;
+                }
+            }
+
+            // send a blank row to reduce ghosting
+            self.send_display_data(&[255; 9]).await;
+        }
     }
 }
