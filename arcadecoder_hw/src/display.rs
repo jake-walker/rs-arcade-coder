@@ -1,10 +1,9 @@
 use embassy_time::{Duration, Timer};
 use esp_hal::{
-    gpio::{Level, Output, OutputPin},
-    peripheral::Peripheral,
+    gpio::{Level, Output, OutputConfig, OutputPin},
     peripherals::SPI2,
     spi::master::Spi,
-    time::RateExtU32,
+    time::Rate,
     Blocking,
 };
 
@@ -56,31 +55,31 @@ impl<'a> ArcadeCoderDisplay<'a> {
     /// );
     /// ```
     pub fn new(
-        spi_bus: SPI2,
-        pin_a0: impl Peripheral<P = impl OutputPin> + 'a,
-        pin_a1: impl Peripheral<P = impl OutputPin> + 'a,
-        pin_a2: impl Peripheral<P = impl OutputPin> + 'a,
-        pin_oe: impl Peripheral<P = impl OutputPin> + 'a,
-        pin_latch: impl Peripheral<P = impl OutputPin> + 'a,
-        pin_data: impl Peripheral<P = impl OutputPin> + 'a,
-        pin_clock: impl Peripheral<P = impl OutputPin> + 'a,
+        spi_bus: SPI2<'a>,
+        pin_a0: impl OutputPin + 'a,
+        pin_a1: impl OutputPin + 'a,
+        pin_a2: impl OutputPin + 'a,
+        pin_oe: impl OutputPin + 'a,
+        pin_latch: impl OutputPin + 'a,
+        pin_data: impl OutputPin + 'a,
+        pin_clock: impl OutputPin + 'a,
     ) -> Self {
         Self {
             spi: Spi::new(
                 spi_bus,
                 esp_hal::spi::master::Config::default()
-                    .with_frequency(200_u32.kHz())
+                    .with_frequency(Rate::from_khz(200_u32))
                     .with_mode(esp_hal::spi::Mode::_0)
                     .with_write_bit_order(esp_hal::spi::BitOrder::MsbFirst),
             )
             .expect("could not create spi")
             .with_mosi(pin_data)
             .with_sck(pin_clock),
-            pin_a0: Output::new(pin_a0, Level::Low),
-            pin_a1: Output::new(pin_a1, Level::Low),
-            pin_a2: Output::new(pin_a2, Level::Low),
-            pin_oe: Output::new(pin_oe, Level::High),
-            pin_latch: Output::new(pin_latch, Level::Low),
+            pin_a0: Output::new(pin_a0, Level::Low, OutputConfig::default()),
+            pin_a1: Output::new(pin_a1, Level::Low, OutputConfig::default()),
+            pin_a2: Output::new(pin_a2, Level::Low, OutputConfig::default()),
+            pin_oe: Output::new(pin_oe, Level::High, OutputConfig::default()),
+            pin_latch: Output::new(pin_latch, Level::Low, OutputConfig::default()),
             channel_select_delay: Duration::from_micros(100),
             latch_delay: Duration::from_micros(50),
             display_buffer: [[255; 9]; 6],
@@ -238,9 +237,7 @@ impl<'a> ArcadeCoderDisplay<'a> {
         self.pin_oe.set_low();
         self.pin_latch.set_low();
 
-        self.spi
-            .write_bytes(words)
-            .expect("could not write display data");
+        self.spi.write(words).expect("could not write display data");
 
         self.pin_latch.set_high();
         Timer::after(self.latch_delay).await;

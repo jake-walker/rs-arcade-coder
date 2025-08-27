@@ -1,9 +1,6 @@
 use embassy_futures::{join::join_array, select::select_array};
 use embassy_time::{Duration, Timer};
-use esp_hal::{
-    gpio::{Input, InputPin, Pull},
-    peripheral::Peripheral,
-};
+use esp_hal::gpio::{Input, InputConfig, InputPin, Pull};
 
 use crate::{display::ArcadeCoderDisplay, Coordinates};
 
@@ -33,20 +30,22 @@ impl<'a> ArcadeCoderInputs<'a> {
     /// );
     /// ```
     pub fn new(
-        inputs_1_7: impl Peripheral<P = impl InputPin> + 'a,
-        inputs_2_8: impl Peripheral<P = impl InputPin> + 'a,
-        inputs_3_9: impl Peripheral<P = impl InputPin> + 'a,
-        inputs_4_10: impl Peripheral<P = impl InputPin> + 'a,
-        inputs_5_11: impl Peripheral<P = impl InputPin> + 'a,
-        inputs_6_12: impl Peripheral<P = impl InputPin> + 'a,
+        inputs_1_7: impl InputPin + 'a,
+        inputs_2_8: impl InputPin + 'a,
+        inputs_3_9: impl InputPin + 'a,
+        inputs_4_10: impl InputPin + 'a,
+        inputs_5_11: impl InputPin + 'a,
+        inputs_6_12: impl InputPin + 'a,
     ) -> Self {
+        let input_cfg: InputConfig = InputConfig::default().with_pull(ROW_PULL);
+
         Self {
-            rows_1_7: Input::new(inputs_1_7, ROW_PULL),
-            rows_2_8: Input::new(inputs_2_8, ROW_PULL),
-            rows_3_9: Input::new(inputs_3_9, ROW_PULL),
-            rows_4_10: Input::new(inputs_4_10, ROW_PULL),
-            rows_5_11: Input::new(inputs_5_11, ROW_PULL),
-            rows_6_12: Input::new(inputs_6_12, ROW_PULL),
+            rows_1_7: Input::new(inputs_1_7, input_cfg),
+            rows_2_8: Input::new(inputs_2_8, input_cfg),
+            rows_3_9: Input::new(inputs_3_9, input_cfg),
+            rows_4_10: Input::new(inputs_4_10, input_cfg),
+            rows_5_11: Input::new(inputs_5_11, input_cfg),
+            rows_6_12: Input::new(inputs_6_12, input_cfg),
             debounce_delay: Duration::from_millis(20),
         }
     }

@@ -11,13 +11,15 @@ use embassy_futures::select::{select, Either};
 use embassy_time::Timer;
 use esp_backtrace as _;
 use esp_hal::{
-    gpio::{Level, Output},
+    gpio::{Level, Output, OutputConfig},
     timer::timg::TimerGroup,
 };
 use esp_println::println;
 
 const A_COLOR: Color = GREEN;
 const B_COLOR: Color = MAGENTA;
+
+esp_bootloader_esp_idf::esp_app_desc!();
 
 #[derive(Debug)]
 struct State {
@@ -146,7 +148,7 @@ async fn main(_spawner: Spawner) {
 
     state.update_display(&mut ac.display);
 
-    let mut led = Output::new(p.GPIO22, Level::Low);
+    let mut led = Output::new(p.GPIO22, Level::Low, OutputConfig::default());
     led.set_high();
 
     loop {

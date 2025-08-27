@@ -10,7 +10,6 @@
 use display::ArcadeCoderDisplay;
 use esp_hal::{
     gpio::{InputPin, OutputPin},
-    peripheral::Peripheral,
     peripherals::SPI2,
 };
 use inputs::ArcadeCoderInputs;
@@ -41,20 +40,20 @@ impl<'a> ArcadeCoder<'a> {
     /// );
     /// ```
     pub fn new(
-        spi_bus: SPI2,
-        pin_a0: impl Peripheral<P = impl OutputPin> + 'a,
-        pin_a1: impl Peripheral<P = impl OutputPin> + 'a,
-        pin_a2: impl Peripheral<P = impl OutputPin> + 'a,
-        pin_oe: impl Peripheral<P = impl OutputPin> + 'a,
-        pin_latch: impl Peripheral<P = impl OutputPin> + 'a,
-        pin_data: impl Peripheral<P = impl OutputPin> + 'a,
-        pin_clock: impl Peripheral<P = impl OutputPin> + 'a,
-        inputs_1_7: impl Peripheral<P = impl InputPin> + 'a,
-        inputs_2_8: impl Peripheral<P = impl InputPin> + 'a,
-        inputs_3_9: impl Peripheral<P = impl InputPin> + 'a,
-        inputs_4_10: impl Peripheral<P = impl InputPin> + 'a,
-        inputs_5_11: impl Peripheral<P = impl InputPin> + 'a,
-        inputs_6_12: impl Peripheral<P = impl InputPin> + 'a,
+        spi_bus: SPI2<'a>,
+        pin_a0: impl OutputPin + 'a,
+        pin_a1: impl OutputPin + 'a,
+        pin_a2: impl OutputPin + 'a,
+        pin_oe: impl OutputPin + 'a,
+        pin_latch: impl OutputPin + 'a,
+        pin_data: impl OutputPin + 'a,
+        pin_clock: impl OutputPin + 'a,
+        inputs_1_7: impl InputPin + 'a,
+        inputs_2_8: impl InputPin + 'a,
+        inputs_3_9: impl InputPin + 'a,
+        inputs_4_10: impl InputPin + 'a,
+        inputs_5_11: impl InputPin + 'a,
+        inputs_6_12: impl InputPin + 'a,
     ) -> Self {
         Self {
             display: ArcadeCoderDisplay::new(
