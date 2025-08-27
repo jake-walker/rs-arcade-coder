@@ -2,9 +2,8 @@
 #![no_main]
 
 use arcadecoder_hw::{
-    display::{ArcadeCoderDisplay, Color, GREEN, MAGENTA, RED, WHITE},
     font::{FONT_5X5, FONT_5X5_SIZE},
-    ArcadeCoder,
+    ArcadeCoder, Color, GREEN, MAGENTA, RED, WHITE,
 };
 use embassy_executor::Spawner;
 use embassy_futures::select::{select, Either};
@@ -81,42 +80,42 @@ impl State {
         self.check_win();
     }
 
-    pub fn update_display(&self, display: &mut ArcadeCoderDisplay<'_>) {
-        display.clear();
+    pub fn update_display(&self, ac: &mut ArcadeCoder<'_>) {
+        ac.clear();
 
         let mut a_text_color = A_COLOR;
         let mut b_text_color = B_COLOR;
 
         if self.a_winner {
-            display.draw_rect((0, 0), (11, 11), A_COLOR);
+            ac.draw_rect((0, 0), (11, 11), A_COLOR);
             a_text_color = WHITE;
         } else if self.b_winner {
-            display.draw_rect((0, 0), (11, 11), B_COLOR);
+            ac.draw_rect((0, 0), (11, 11), B_COLOR);
             b_text_color = WHITE;
         }
 
-        display.draw_digit(
+        ac.draw_digit(
             (self.score_a % 10).into(),
             FONT_5X5,
             FONT_5X5_SIZE,
             (0, 6),
             a_text_color,
         );
-        display.draw_digit(
+        ac.draw_digit(
             ((self.score_a / 10) % 10).into(),
             FONT_5X5,
             FONT_5X5_SIZE,
             (0, 0),
             a_text_color,
         );
-        display.draw_digit(
+        ac.draw_digit(
             (self.score_b % 10).into(),
             FONT_5X5,
             FONT_5X5_SIZE,
             (7, 6),
             b_text_color,
         );
-        display.draw_digit(
+        ac.draw_digit(
             ((self.score_b / 10) % 10).into(),
             FONT_5X5,
             FONT_5X5_SIZE,
@@ -125,8 +124,8 @@ impl State {
         );
 
         if self.win_threshold == 21 {
-            display.set_pixel((5, 11), RED);
-            display.set_pixel((6, 11), RED);
+            ac.set_pixel((5, 11), RED);
+            ac.set_pixel((6, 11), RED);
         }
     }
 }
@@ -146,21 +145,21 @@ async fn main(_spawner: Spawner) {
 
     let mut state = State::new();
 
-    state.update_display(&mut ac.display);
+    state.update_display(&mut ac);
 
     let mut led = Output::new(p.GPIO22, Level::Low, OutputConfig::default());
     led.set_high();
 
     loop {
-        match select(ac.inputs.wait_for_row_press(), Timer::after_millis(1)).await {
+        match select(ac.wait_for_row_press(), Timer::after_millis(1)).await {
             // if the button was pressed, update the display and draw
             Either::First(_) => {
                 Timer::after_millis(20).await;
-                if ac.inputs.row_pressed().is_none() {
+                if ac.row_pressed().is_none() {
                     continue;
                 }
 
-                if let Some(coords) = ac.inputs.read_buttons(&mut ac.display).await {
+                if let Some(coords) = ac.read_buttons().await {
                     if coords.1 == 11 && (coords.0 == 5 || coords.0 == 6) {
                         if state.win_threshold == 11 {
                             state.win_threshold = 21
@@ -186,13 +185,13 @@ async fn main(_spawner: Spawner) {
                     }
                 }
 
-                ac.inputs.wait_for_row_release().await;
-                state.update_display(&mut ac.display);
-                ac.display.draw().await;
+                ac.wait_for_row_release().await;
+                state.update_display(&mut ac);
+                ac.draw().await;
             }
             // ...otherwise just draw
             Either::Second(_) => {
-                ac.display.draw().await;
+                ac.draw().await;
             }
         }
     }

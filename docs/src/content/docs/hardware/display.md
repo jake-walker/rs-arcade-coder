@@ -2,7 +2,7 @@
 title: Display
 ---
 
-The display on the Arcade Coder is a 24x24 LED matrix. Each pixel works in 3-bit colour (giving 8 total colours). Each pixel also serves as a [button](./buttons.md).
+The display on the Arcade Coder is a 12x12 LED matrix. Each pixel works in 3-bit colour (giving 8 total colours). Each pixel also serves as a [button](./buttons.md).
 
 The matrix is split into groups by row. The multiplexer selects the rows to be drawn to, and the data is sent to the rows via the shift register.
 
