@@ -26,6 +26,14 @@ export default defineConfig({
       },
       sidebar: [
         {
+          label: "Rust Setup",
+          link: "setup",
+        },
+        {
+          label: "Rust API",
+          link: "api",
+        },
+        {
           label: "Hardware",
           items: ["hardware/overview", "hardware/display", "hardware/buttons"],
         },
@@ -36,10 +44,6 @@ export default defineConfig({
         {
           label: "Links",
           link: "links",
-        },
-        {
-          label: "API",
-          link: "api",
         },
       ],
     }),

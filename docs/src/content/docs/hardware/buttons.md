@@ -5,10 +5,10 @@ title: Buttons
 ## Rows
 
 :::note
-I tried using these pins with an internal pull up, pull down and no pull. They seems to be most reliable with an internal pull up, however they also worked fine without.
+I tried using these pins with an internal pull up, pull down and no pull. They seems to be most reliable with an internal pull up, however they also worked without.
 :::
 
-The same rows as connected together for the display also share inputs for the buttons.
+The buttons use the same row layout as the display.
 
 | ESP    | Rows   |
 | ------ | ------ |
@@ -19,19 +19,17 @@ The same rows as connected together for the display also share inputs for the bu
 | GPIO33 | 5 & 11 |
 | GPIO32 | 6 & 12 |
 
-## Detecting Button Presses
+## Implementation Notes
 
-:::note
-Here you can also do the inverse, by having essentially a fully white display buffer, and removing the red colour from each pixel in turn. This results in a high value for a pressed button, and low without. However, I found this resulted in more noticable artifacts on the display.
-:::
+This uses similar logic as the display where a test pattern is written out on one of the multiplexer channels. This seems to be applied to every row in the matrix.
 
-:::note
-Ensure the latch and output enable are **low**, otherwise it doesn't seem to work.
-:::
+For example, if we set the first red "pixel" to low, the input pins for the buttons would change depending on whether the first button in that row is pressed or not. To repeat the process, you scan along the entire column, checking the row inputs for each.
 
-1. Detect button presses by checking for **high** values on the input pins. This indicates whether one or more buttons are being pressed in that row group.
-1. Once you have a row group, cycle through each pixel in the row. Use the same logic & data format as the display to set this pixel to red. However, instead of drawing to the display as normal, instead send the data after setting **A0, A1 & A2 low**.
-   _For reference, send `[0xFF] * 9` and set the relevant red component to 0 as you scan._
-1. Read the same row group input pin again. If the current pixel is pressed, the value should now be **low**.
-1. Continue 2 and 3 until a button has been found.
-1. _You may wish to redraw to the display as normal after this to reduce artifacts shown._
+1. Create a buffer for `0xffffffff` for the "testing buffer".
+1. Set the multiplexer to the input channel where A0, A1 and A2 are all high.
+1. To test the first column, turn off the first "red" pixel in the testing buffer. More info on the format is on the display page.
+1. Send the test buffer to the display as described on the display page. _For clarity, there is no need for delays here (other than the latch)._
+1. Check the rows that are pressed by detecting inputs that are low.
+1. Reset the buffer back by turning on the "red" pixel, then repeat for all other columns of the matrix.
+
+You may need to write blank data after sending the test patterns to avoid red artifacts on the display. I noticed very dim red LEDs for the final 6 rows of the matrix on the last column when this was happening.

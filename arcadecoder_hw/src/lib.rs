@@ -5,7 +5,6 @@
 //! Currently the display and single button presses work.
 
 #![no_std]
-#![doc = include_str!("../../docs/setup.md")]
 
 use embassy_time::{Duration, Timer};
 use esp_hal::gpio::{Input, InputConfig, InputPin, Pull};
@@ -16,7 +15,6 @@ use esp_hal::{
     time::Rate,
     Blocking,
 };
-use esp_println::println;
 
 use crate::font::Font;
 
@@ -66,12 +64,13 @@ pub struct ArcadeCoder<'a> {
     /// The current display buffer.
     pub display_buffer: [[u8; 9]; 6],
 
+    /// A matrix of button presses corresponding to the physical layout.
     pub button_presses: [[bool; 12]; 12],
 
-    pub debounce_delay: Duration,
-
+    /// The time to wait after displaying a row on the display.
     pub channel_on_time: Duration,
 
+    /// The number of reads required for a button press to register.
     pub debounce_reads: u8,
 
     prev_read: [[bool; 12]; 12],
@@ -82,7 +81,7 @@ pub struct ArcadeCoder<'a> {
 impl<'a> ArcadeCoder<'a> {
     /// Create a new instance of the Arcade Coder.
     ///
-    /// # Example
+    /// **Example:**
     ///
     /// ```
     /// let p = esp_hal::init(esp_hal::Config::default());
@@ -116,7 +115,7 @@ impl<'a> ArcadeCoder<'a> {
             spi: Spi::new(
                 spi_bus,
                 esp_hal::spi::master::Config::default()
-                    .with_frequency(Rate::from_mhz(2_u32))
+                    .with_frequency(Rate::from_mhz(8_u32))
                     .with_mode(esp_hal::spi::Mode::_0)
                     .with_write_bit_order(esp_hal::spi::BitOrder::MsbFirst),
             )
@@ -128,10 +127,10 @@ impl<'a> ArcadeCoder<'a> {
             pin_a2: Output::new(pin_a2, Level::Low, output_cfg),
             pin_oe: Output::new(pin_oe, Level::High, output_cfg),
             pin_latch: Output::new(pin_latch, Level::Low, output_cfg),
-            channel_select_delay: Duration::from_micros(20),
-            latch_delay: Duration::from_micros(10),
+            channel_select_delay: Duration::from_micros(5),
+            latch_delay: Duration::from_micros(2),
             display_buffer: [[255; 9]; 6],
-            channel_on_time: Duration::from_micros(400),
+            channel_on_time: Duration::from_micros(1388),
 
             // Input
             rows_1_7: Input::new(inputs_1_7, input_cfg),
@@ -140,7 +139,6 @@ impl<'a> ArcadeCoder<'a> {
             rows_4_10: Input::new(inputs_4_10, input_cfg),
             rows_5_11: Input::new(inputs_5_11, input_cfg),
             rows_6_12: Input::new(inputs_6_12, input_cfg),
-            debounce_delay: Duration::from_millis(20),
             button_presses: [[false; 12]; 12],
             debounce_reads: 3,
             prev_read: [[false; 12]; 12],
@@ -151,7 +149,7 @@ impl<'a> ArcadeCoder<'a> {
 
     // MARK: - Display
 
-    pub(crate) async fn set_channel(&mut self, channel: Option<usize>) {
+    async fn set_channel(&mut self, channel: Option<usize>) {
         let (a0_level, a1_level, a2_level) = match channel {
             Some(0) => (Level::Low, Level::High, Level::Low),
             Some(1) => (Level::High, Level::High, Level::Low),
@@ -172,9 +170,9 @@ impl<'a> ArcadeCoder<'a> {
 
     /// Clear the display buffer to make the screen blank.
     ///
-    /// The [`draw`] method needs to be called after this to update the display.
+    /// The [`scan`] method needs to be called after this to update the display.
     ///
-    /// [`draw`]: #method.draw
+    /// [`scan`]: #method.scan
     pub fn clear(&mut self) {
         // clear the display by setting all bits on
         self.display_buffer = [[255; 9]; 6];
@@ -183,6 +181,10 @@ impl<'a> ArcadeCoder<'a> {
     /// Set a pixel to a color
     ///
     /// _Indexing starts from 0, so (0, 0) is the top-left and (11, 11) is the bottom-right._
+    ///
+    /// The [`scan`] method needs to be called after this to update the display.
+    ///
+    /// [`scan`]: #method.scan
     pub fn set_pixel(&mut self, pos: Coordinates, color: Color) {
         // if the coordinates are out of bounds, do nothing
         if pos.0 > 11 || pos.1 > 11 {
@@ -298,7 +300,7 @@ impl<'a> ArcadeCoder<'a> {
     }
 
     async fn send_display_data(&mut self, words: &[u8]) {
-        self.pin_oe.set_low();
+        self.pin_oe.set_high();
         self.pin_latch.set_low();
 
         self.spi.write(words).expect("could not write display data");
@@ -306,6 +308,7 @@ impl<'a> ArcadeCoder<'a> {
         self.pin_latch.set_high();
         Timer::after(self.latch_delay).await;
         self.pin_latch.set_low();
+        self.pin_oe.set_low();
     }
 
     fn get_display_indexes(&self, pos: Coordinates) -> (usize, usize) {
@@ -319,6 +322,13 @@ impl<'a> ArcadeCoder<'a> {
 
     // MARK: - Inputs
 
+    /// Handle button press events. This takes care of debouncing inputs and returns an event for button presses and releases.
+    ///
+    /// The handler function passed in to the function will be called for each button event.
+    ///
+    /// The [`scan`] method needs to be called at regular intervals for button presses to update.
+    ///
+    /// [`scan`]: #method.scan
     pub fn handle_input_events<F>(&mut self, mut handler: F)
     where
         F: FnMut(ButtonEvent),
@@ -347,6 +357,14 @@ impl<'a> ArcadeCoder<'a> {
         }
     }
 
+    /// Handle button press events. This takes care of debouncing inputs and returns an event for button presses and releases.
+    ///
+    /// This uses sends events from [`handle_input_events`] but instead sends events through to a channel, rather than a handler function.
+    ///
+    /// The [`scan`] method needs to be called at regular intervals for button presses to update.
+    ///
+    /// [`handle_input_events`]: #method.handle_input_events
+    /// [`scan`]: #method.scan
     pub fn handle_input_events_to_channel<const N: usize>(
         &mut self,
         ch: &embassy_sync::channel::Channel<
@@ -360,20 +378,11 @@ impl<'a> ArcadeCoder<'a> {
         });
     }
 
-    /// Continuously scan the display and sample buttons while drawing.
+    /// Update the display while also scanning for button inputs.
     ///
-    /// This combines the previous drawing and button sampling so the display is not
-    /// interrupted while checking inputs. The method updates `self.button_presses`.
+    /// This draws each row in turn and checks for button presses on the same row before going to the next row.
     ///
-    /// Implementation notes / assumptions:
-    /// - The display is driven per-channel (6 channels). Each channel maps to two
-    ///   physical matrix rows (row and row + 6). When a channel is active we test
-    ///   each column by pulling the red bit low and reading the corresponding input
-    ///   pin for that channel. If the input is low the button is considered pressed.
-    /// - `button_presses` mirrors the layout of `display_buffer` ([6][9]). Each
-    ///   boolean is set to true if any bit in the corresponding byte was observed
-    ///   pressed during this scan pass. If you need per-pixel mapping we can change
-    ///   the type to a finer-grained structure in a follow-up.
+    /// This must be called at a regular interval to ensure the display is refreshed and button inputs are registered.
     pub async fn scan(&mut self) {
         // helpers to access inputs by index without repeating logic
         let read_input = |s: &mut ArcadeCoder<'a>, idx: usize| -> bool {
@@ -407,9 +416,6 @@ impl<'a> ArcadeCoder<'a> {
             self.send_display_data(&buf).await;
             // wait a short duration
             Timer::after(self.channel_on_time).await;
-
-            // send a blank row to reduce ghosting
-            self.send_display_data(&[255; 9]).await;
 
             // select the input channel
             self.set_channel(None).await;

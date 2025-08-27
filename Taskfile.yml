@@ -1,0 +1,7 @@
+version: 3
+tasks:
+  build-docs:
+    cmds:
+      - RUSTC_BOOSTRAP=1 RUSTDOCFLAGS="-Z unstable-options --output-format json" cargo doc --no-deps
+      - rustdoc-md --path ./target/xtensa-esp32-none-elf/doc/arcadecoder_hw.json --output ./docs/src/content/docs/api.md
+      - "sed -i '1s/^/---\\ntitle: Rust API\\n---\\n/' ./docs/src/content/docs/api.md"
