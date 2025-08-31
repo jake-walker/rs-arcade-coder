@@ -140,7 +140,7 @@ impl<'a> ArcadeCoder<'a> {
             rows_5_11: Input::new(inputs_5_11, input_cfg),
             rows_6_12: Input::new(inputs_6_12, input_cfg),
             button_presses: [[false; 12]; 12],
-            debounce_reads: 3,
+            debounce_reads: 5,
             prev_read: [[false; 12]; 12],
             stable_count: [[0u8; 12]; 12],
             stable_state: [[false; 12]; 12],
