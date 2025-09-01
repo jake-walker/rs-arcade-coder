@@ -250,7 +250,7 @@ async fn main(spawner: Spawner) {
     // main loop
     loop {
         // draw the display and get button press inputs
-        ac.scan().await;
+        ac.scan();
 
         // handle debounced button events from the library, passing through to the input channel
         ac.handle_input_events_to_channel(ev);
